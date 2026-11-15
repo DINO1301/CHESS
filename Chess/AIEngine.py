@@ -1,166 +1,106 @@
+import os
+import atexit
 import random
-import ChessEngine as CE
-pieceScore ={"K":0, "Q":10, "R":5, "B":3, "N":3, "p":1}
+import chess.engine
 
-knightScores = [[1 ,1 ,1 ,1 ,1 ,1 ,1 ,1],
-                [1 ,2 ,2 ,2 ,2 ,2 ,2 ,1],
-                [1 ,2 ,3 ,3 ,3 ,3 ,2 ,1],
-                [1 ,2 ,3 ,4 ,4 ,3 ,2 ,1],
-                [1 ,2 ,3 ,4 ,4 ,3 ,2 ,1],
-                [1 ,2 ,3 ,3 ,3 ,3 ,2 ,1],
-                [1 ,2 ,2 ,2 ,2 ,2 ,2 ,1],
-                [1 ,1 ,1 ,1 ,1 ,1 ,1 ,1]]
+# ===== Stockfish =====
+# Đường dẫn tới engine Stockfish đi kèm dự án
+STOCKFISH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stockfish", "stockfish.exe")
+STOCKFISH_TIME = 1.0  # thời gian Stockfish suy nghĩ cho mỗi nước đi (giây)
 
-bishopScores = [[4 ,3 ,2 ,1 ,1 ,2 ,3 ,4],
-                [3 ,4 ,3 ,2 ,2 ,3 ,4 ,3],
-                [2 ,3 ,4 ,3 ,3 ,4 ,3 ,2],
-                [1 ,2 ,3 ,4 ,4 ,3 ,2 ,1],
-                [1 ,2 ,3 ,4 ,4 ,3 ,2 ,1],
-                [2 ,3 ,4 ,3 ,3 ,4 ,3 ,2],
-                [3 ,4 ,3 ,2 ,2 ,3 ,4 ,3],
-                [4 ,3 ,2 ,1 ,1 ,2 ,3 ,4]]
+_engine = None  # tiến trình Stockfish dùng chung, chỉ mở một lần
 
-queenScores =  [[1 ,1 ,1 ,3 ,1 ,1 ,1 ,1],
-                [1 ,2 ,3 ,3 ,3 ,1 ,1 ,1],
-                [1 ,4 ,3 ,3 ,3 ,4 ,2 ,1],
-                [1 ,2 ,3 ,3 ,3 ,2 ,2 ,1],
-                [1 ,2 ,3 ,3 ,3 ,2 ,2 ,1],
-                [1 ,4 ,3 ,3 ,3 ,4 ,2 ,1],
-                [1 ,1 ,2 ,3 ,3 ,1 ,1 ,1],
-                [1 ,1 ,1 ,3 ,1 ,1 ,1 ,1]]
 
-rookScores =  [ [4 ,3 ,4 ,4 ,4 ,4 ,3 ,4],
-                [4 ,4 ,4 ,4 ,4 ,4 ,4 ,4],
-                [1 ,1 ,2 ,3 ,3 ,2 ,1 ,1],
-                [1 ,2 ,3 ,4 ,4 ,3 ,2 ,1],
-                [1 ,2 ,3 ,4 ,4 ,3 ,2 ,1],
-                [1 ,1 ,2 ,3 ,3 ,2 ,1 ,1],
-                [4 ,4 ,4 ,4 ,4 ,4 ,4 ,4],
-                [4 ,3 ,4 ,4 ,4 ,4 ,3 ,4]]
+def _getEngine():
+    """Mở Stockfish một lần duy nhất rồi tái sử dụng cho các nước đi sau."""
+    global _engine
+    if _engine is None:
+        _engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+    return _engine
 
-whitePawnScores = [ [8 ,8 ,8 ,8 ,8 ,8 ,8 ,8],
-                    [8 ,8 ,8 ,8 ,8 ,8 ,8 ,8],
-                    [5 ,6 ,6 ,7 ,7 ,6 ,6 ,5],
-                    [2 ,3 ,3 ,5 ,5 ,3 ,3 ,2],
-                    [1 ,2 ,3 ,4 ,4 ,3 ,2 ,1],
-                    [1 ,1 ,2 ,3 ,3 ,2 ,1 ,1],
-                    [1 ,1 ,1 ,0 ,0 ,1 ,1 ,1],
-                    [0 ,0 ,0 ,0 ,0 ,0 ,0 ,0]]
 
-blackPawnScores = [ [0 ,0 ,0 ,0 ,0 ,0 ,0 ,0],
-                    [1 ,1 ,1 ,0 ,0 ,1 ,1 ,1],
-                    [1 ,1 ,2 ,3 ,3 ,2 ,1 ,1],
-                    [1 ,2 ,3 ,4 ,4 ,3 ,2 ,1],
-                    [2 ,3 ,3 ,5 ,5 ,3 ,3 ,2],
-                    [5 ,6 ,6 ,7 ,7 ,6 ,6 ,5],
-                    [8 ,8 ,8 ,8 ,8 ,8 ,8 ,8],
-                    [8 ,8 ,8 ,8 ,8 ,8 ,8 ,8]]
+def closeEngine():
+    """Đóng tiến trình Stockfish khi thoát chương trình."""
+    global _engine
+    if _engine is not None:
+        _engine.quit()
+        _engine = None
 
-piecePositionScores = {"N" : knightScores, "Q": queenScores, "B":bishopScores, "R":rookScores, 
-                       "bp":blackPawnScores, "wp":whitePawnScores}
 
-CHECKMATE = 1000
-STALEMATE = 0
-DEPTH = 3
+atexit.register(closeEngine)
 
-def findRandomMove(validMoves):
-    return validMoves[random.randint(0, len(validMoves)-1)]
+
+def boardToFEN(gs):
+    """Chuyển trạng thái bàn cờ của GameState sang chuỗi FEN để đưa cho Stockfish."""
+    rows = []
+    for r in range(8):
+        rowStr = ""
+        empty = 0
+        for c in range(8):
+            piece = gs.board[r][c]
+            if piece == "--":
+                empty += 1
+            else:
+                if empty:
+                    rowStr += str(empty)
+                    empty = 0
+                # quân trắng viết HOA, quân đen viết thường theo chuẩn FEN
+                rowStr += piece[1].upper() if piece[0] == 'w' else piece[1].lower()
+        if empty:
+            rowStr += str(empty)
+        rows.append(rowStr)
+
+    activeColor = "w" if gs.whiteToMove else "b"
+
+    cr = gs.currentCastlingRight
+    castling = ""
+    if cr.wks:
+        castling += "K"
+    if cr.wqs:
+        castling += "Q"
+    if cr.bks:
+        castling += "k"
+    if cr.bqs:
+        castling += "q"
+    if not castling:
+        castling = "-"
+
+    enPassant = "-"
+    if gs.enpassantPossilbe:
+        r, c = gs.enpassantPossilbe
+        enPassant = chr(ord('a') + c) + str(8 - r)
+
+    return "{} {} {} {} 0 1".format("/".join(rows), activeColor, castling, enPassant)
+
 
 def findBestMove(gs, validMoves):
-    global nextMove
-    tempCastleRight = CE.CastleRight(gs.currentCastlingRight.wks,gs.currentCastlingRight.bks,
-                                           gs.currentCastlingRight.wqs,gs.currentCastlingRight.bqs)
-    nextMove = None
-    validMoves = moveOrdering(gs,validMoves)
-    findMoveNegaMaxAlphaBeta(gs, validMoves, DEPTH, -CHECKMATE,  CHECKMATE, 1 if gs.whiteToMove else -1)
-    gs.currentCastlingRight = tempCastleRight
-    return nextMove      
+    """Trả về nước đi tốt nhất do Stockfish tính toán (đổi từ định dạng UCI sang Move của dự án)."""
+    if not validMoves:
+        return None
 
-def findMoveNegaMaxAlphaBeta(gs, validMoves, depth,alpha, beta, turnMultiplier):
-    global nextMove
-    if depth == 0:
-        return turnMultiplier * scoreBoard(gs)
-    maxScore = -CHECKMATE
+    fen = boardToFEN(gs)
+    try:
+        board = chess.Board(fen)
+    except ValueError:
+        # một số thế cờ có ô bắt tốt qua đường không hợp lệ với chuẩn FEN -> bỏ trường đó
+        parts = fen.split(" ")
+        parts[3] = "-"
+        board = chess.Board(" ".join(parts))
+
+    result = _getEngine().play(board, chess.engine.Limit(time=STOCKFISH_TIME))
+    if result.move is None:
+        return None
+
+    uci = result.move.uci()
+    startRow, startCol = 8 - int(uci[1]), ord(uci[0]) - ord('a')
+    endRow, endCol = 8 - int(uci[3]), ord(uci[2]) - ord('a')
+
     for move in validMoves:
-        gs.makeMove(move)
-        nextMoves = gs.getValidMoves()
-        nextMoves = moveOrdering(gs,nextMoves)
-        score = -findMoveNegaMaxAlphaBeta(gs, nextMoves, depth - 1,-beta, -alpha, -turnMultiplier)
-        if score > maxScore:
-            maxScore = score
-            if depth == DEPTH:
-                nextMove = move
-        gs.undoMove()
-        if maxScore> alpha :
-            alpha = maxScore
-        if alpha >= beta:
-            break
-    return maxScore
+        if (move.startRow == startRow and move.startCol == startCol
+                and move.endRow == endRow and move.endCol == endCol):
+            return move
+    return None
 
-def scoreBoard(gs):
-    if gs.checkMate:
-        if gs.whiteToMove:
-            return -CHECKMATE # bên đen thắng
-        else:
-            return CHECKMATE # bên trắng thắng
-    score = 0
-    for row in range(len(gs.board)):
-        for col in range(len(gs.board[row])):
-            square = gs.board[row][col]
-            if square != '--':
-                piecePositionScore = 0
-                if square[1] != "K":
-                    if square[1] == 'p':
-                        piecePositionScore = piecePositionScores[square][row][col]
-                    else:    
-                        piecePositionScore = piecePositionScores[square[1]][row][col]
-                if square[0] == 'w':
-                    score += pieceScore[square[1]] + piecePositionScore * 0.1
-                elif square[0] == 'b':
-                    score -= (pieceScore[square[1]] + piecePositionScore * 0.1)
-    return score
 
-def moveOrdering(gs, validMoves):
-    # Tạo một danh sách để lưu trữ điểm số cho mỗi nước đi
-    moveScores = []
-    winningCapture = 0.8
-    losingCapture = 0.2
-
-    # Tính toán điểm số cho mỗi nước đi
-    for move in validMoves:
-        gs.makeMove(move)
-        # Điểm số cơ bản dựa trên bảng điểm hiện tại
-        score = scoreBoard(gs)
-        gs.undoMove()
-
-        # Thêm điểm thưởng hoặc phạt dựa trên các yếu tố khác
-        if move.isCapture:
-        
-            score += pieceScore[move.pieceCaptured[1]]
-        if move.isPawnPromotion:
-            # Thêm điểm nếu là nước thăng cấp
-            score += 1  # Giả sử thăng cấp được 1 điểm thưởng
-
-        moveScores.append(score)
-
-    # Sắp xếp các nước đi dựa trên điểm số, từ cao xuống thấp
-    sortedMoves = [move for _, move in sorted(zip(moveScores, validMoves), key=lambda pair: pair[0], reverse=True)]
-
-    return sortedMoves
-
-def is_move_safe(gs, move):
-    """
-    Kiểm tra xem sau khi thực hiện nước đi, quân cờ có an toàn không.
-    """
-    gs.makeMove(move)  # Thực hiện nước đi
-    opponent_moves = gs.getValidMoves()  # Lấy tất cả nước đi hợp lệ của đối thủ
-    gs.undoMove()  # Hoàn tác nước đi để không thay đổi trạng thái bàn cờ
-
-    for opp_move in opponent_moves:
-        if opp_move.endRow == move.endRow and opp_move.endCol == move.endCol:
-            return False  # Nếu có nước đi của đối thủ ăn được quân cờ tại vị trí mới, nước đi không an toàn
-
-    return True  # Nếu không có nước đi nào của đối thủ ăn được quân cờ, nước đi an toàn
-
-       
-
+def findRandomMove(validMoves):
+    return validMoves[random.randint(0, len(validMoves) - 1)]

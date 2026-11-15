@@ -221,15 +221,68 @@ class GameState():
             return self.squareUnderAttack(self.blackKingLocation[0], self.blackKingLocation[1])
 
     # hàm này để kiểm tra  xem đổi thủ có thể tấn công ô vuông có toạ độ (r, c) không
-    def squareUnderAttack(self,r,c):
-        self.whiteToMove = not self.whiteToMove # chuyển sang lượt đi của đối thủ 
-        oppMoves = self.getAllPossibleMoves() # lấy các lượt đi được của dối thủ
-        self.whiteToMove = not self.whiteToMove # chuyển lại về lượt đi của bản thân để không gặp lỗi
-        for move in oppMoves:
-            if move.endRow == r and move.endCol == c: # có nghĩa là ô vuông đó có thể bị tấn công
+    # kiểm tra trực tiếp từ ô cần xét thay vì sinh toàn bộ nước đi của đối thủ
+    def squareUnderAttack(self, r, c):
+        board = self.board
+        if self.whiteToMove:
+            enemy = 'b'  # đối thủ của trắng
+            pawnRow = r - 1  # tốt đen tấn công lên từ phía trên (R-1, C±1)
+        else:
+            enemy = 'w'
+            pawnRow = r + 1  # tốt trắng tấn công xuống từ phía dưới (R+1, C±1)
+
+        # tốt
+        if 0 <= pawnRow < 8:
+            enemyPawn = enemy + 'p'
+            if c - 1 >= 0 and board[pawnRow][c - 1] == enemyPawn:
                 return True
+            if c + 1 <= 7 and board[pawnRow][c + 1] == enemyPawn:
+                return True
+
+        # mã
+        enemyKnight = enemy + 'N'
+        for dr, dc in ((-2, -1), (-2, 1), (-1, -2), (-1, 2),
+                       (1, -2), (1, 2), (2, -1), (2, 1)):
+            rr, cc = r + dr, c + dc
+            if 0 <= rr < 8 and 0 <= cc < 8 and board[rr][cc] == enemyKnight:
+                return True
+
+        # vua
+        enemyKing = enemy + 'K'
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                if dr == 0 and dc == 0:
+                    continue
+                rr, cc = r + dr, c + dc
+                if 0 <= rr < 8 and 0 <= cc < 8 and board[rr][cc] == enemyKing:
+                    return True
+
+        # xe / hậu theo hàng và cột
+        for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            rr, cc = r + dr, c + dc
+            while 0 <= rr < 8 and 0 <= cc < 8:
+                piece = board[rr][cc]
+                if piece != '--':
+                    if piece[0] == enemy and (piece[1] == 'R' or piece[1] == 'Q'):
+                        return True
+                    break
+                rr += dr
+                cc += dc
+
+        # tượng / hậu theo đường chéo
+        for dr, dc in ((-1, -1), (-1, 1), (1, -1), (1, 1)):
+            rr, cc = r + dr, c + dc
+            while 0 <= rr < 8 and 0 <= cc < 8:
+                piece = board[rr][cc]
+                if piece != '--':
+                    if piece[0] == enemy and (piece[1] == 'B' or piece[1] == 'Q'):
+                        return True
+                    break
+                rr += dr
+                cc += dc
+
         return False
-                
+
 
     """
     các nước đi không cần xem xét
